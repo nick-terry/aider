@@ -80,9 +80,15 @@ def send_completion(
         kwargs["temperature"] = temperature
 
     if functions is not None:
-        function = functions[0]
-        kwargs["tools"] = [dict(type="function", function=function)]
-        kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+        # TODO: this is a change to the aider library to support multiple function options
+        toolsList = []
+        for function in functions:
+            toolsList.append(dict(type="function", function=function))
+    
+        kwargs["tools"] = toolsList
+
+        if len(functions) == 1:
+            kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
 
     if extra_params is not None:
         kwargs.update(extra_params)

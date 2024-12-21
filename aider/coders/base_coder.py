@@ -565,7 +565,10 @@ class Coder:
     def get_cur_message_text(self):
         text = ""
         for msg in self.cur_messages:
-            text += msg["content"] + "\n"
+            #  TODO: make patch for this
+            msgContent = msg["content"]
+            if msgContent is not None:
+                text += msgContent + "\n"
         return text
 
     def get_ident_mentions(self, text):
@@ -1162,6 +1165,9 @@ class Coder:
 
         chunks = self.format_messages()
         messages = chunks.all_messages()
+        # TODO: this fixes exception?
+        for msg in messages:
+            msg.pop("function_call", "")
         self.warm_cache(chunks)
 
         if self.verbose:
@@ -1181,6 +1187,7 @@ class Coder:
         try:
             while True:
                 try:
+
                     yield from self.send(messages, functions=self.functions)
                     break
                 except retry_exceptions() as err:
@@ -1248,10 +1255,10 @@ class Coder:
             self.num_exhausted_context_windows += 1
             return
 
-        if self.partial_response_function_call:
+        if self.partial_response_function_calls:
             args = self.parse_partial_args()
             if args:
-                content = args.get("explanation") or ""
+                content = "\n".join([arg.get("explanation", "") for arg in args])
             else:
                 content = ""
         elif self.partial_response_content:
@@ -1398,14 +1405,16 @@ class Coder:
     def update_cur_messages(self):
         if self.partial_response_content:
             self.cur_messages += [dict(role="assistant", content=self.partial_response_content)]
-        if self.partial_response_function_call:
-            self.cur_messages += [
-                dict(
-                    role="assistant",
-                    content=None,
-                    function_call=self.partial_response_function_call,
-                )
-            ]
+        if self.partial_response_function_calls:
+            for function_call in self.partial_response_function_calls:
+                self.cur_messages += [
+                    dict(
+                        role="assistant",
+                        content=None,
+                        function_call=function_call
+                    )
+                ]
+
 
     def get_file_mentions(self, content):
         words = set(word for word in content.split())
@@ -1466,7 +1475,7 @@ class Coder:
             model = self.main_model
 
         self.partial_response_content = ""
-        self.partial_response_function_call = dict()
+        self.partial_response_function_calls = []
 
         self.io.log_llm_history("TO LLM", format_messages(messages))
 
@@ -1502,11 +1511,12 @@ class Coder:
 
             if self.partial_response_content:
                 self.io.ai_output(self.partial_response_content)
-            elif self.partial_response_function_call:
+            elif self.partial_response_function_calls:
                 # TODO: push this into subclasses
                 args = self.parse_partial_args()
                 if args:
-                    self.io.ai_output(json.dumps(args, indent=4))
+                    for arg in args:
+                        self.io.ai_output(json.dumps(arg, indent=4))
 
             self.calculate_and_show_tokens_and_cost(messages, completion)
 
@@ -1522,9 +1532,10 @@ class Coder:
         show_content_err = None
         try:
             if completion.choices[0].message.tool_calls:
-                self.partial_response_function_call = (
-                    completion.choices[0].message.tool_calls[0].function
-                )
+                # self.partial_response_function_call = (
+                #     completion.choices[0].message.tool_calls[0].function
+                # )
+                self.partial_response_function_calls = [ tool_call.function for tool_call in completion.choices[0].message.tool_calls ]
         except AttributeError as func_err:
             show_func_err = func_err
 
@@ -1534,7 +1545,7 @@ class Coder:
             show_content_err = content_err
 
         resp_hash = dict(
-            function_call=str(self.partial_response_function_call),
+            function_call=str(self.partial_response_function_calls),
             content=self.partial_response_content,
         )
         resp_hash = hashlib.sha1(json.dumps(resp_hash, sort_keys=True).encode())
@@ -1569,10 +1580,11 @@ class Coder:
                 func = chunk.choices[0].delta.function_call
                 # dump(func)
                 for k, v in func.items():
-                    if k in self.partial_response_function_call:
-                        self.partial_response_function_call[k] += v
-                    else:
-                        self.partial_response_function_call[k] = v
+                    for fnCall in self.partial_response_function_calls:
+                        if k in fnCall:
+                            fnCall[k] += v
+                        else:
+                            fnCall[k] = v
             except AttributeError:
                 pass
 
@@ -1931,10 +1943,10 @@ class Coder:
 
         return edited
 
-    def parse_partial_args(self):
+    def _parse_partial_args(self, functionCall):
         # dump(self.partial_response_function_call)
 
-        data = self.partial_response_function_call.get("arguments")
+        data = functionCall.get("arguments")
         if not data:
             return
 
@@ -1957,6 +1969,10 @@ class Coder:
             return json.loads(data + '"}]}')
         except JSONDecodeError:
             pass
+
+    def parse_partial_args(self):
+
+        return [self._parse_partial_args(fnCall) for fnCall in self.partial_response_function_calls]
 
     # commits...
 

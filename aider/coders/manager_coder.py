@@ -1,20 +1,23 @@
 
-from aider import __version__
+from aider import __version__, utils
 from aider.coders.ask_coder import AskCoder
-from aider.coders.manager_coder_prompts import ManagerPrompts
+from aider.coders.base_prompts import CoderPrompts
 from aider.coders.base_coder import FinishReasonLength, Coder
+from aider.coders.manager_coder_prompts import ManagerPrompts
 from aider.llm import litellm
 from aider.sendchat import RETRY_TIMEOUT, retry_exceptions
 
 import json
+import logging
 import openai
 import time
 import traceback
 from typing import Dict, Tuple, List, Any
 
+logger = logging.getLogger("proctor.cleanup.agent")
+
 class TaskEndedExeption(Exception):
     pass
-
 
 class ManagerCoder(AskCoder):
 
@@ -121,6 +124,7 @@ class ManagerCoder(AskCoder):
     def handlePossibleToolCalls(self):
 
         args: Dict = self.parse_partial_args()
+        responseMsgIdxList: List[str] = []
 
         for fnCallId, fnCall, fnCallArgs in zip(self.partial_response_function_calls_id, self.partial_response_function_calls, args):
 
@@ -128,8 +132,14 @@ class ManagerCoder(AskCoder):
 
             content = self.partial_response_content
             
-            self.functionChatOutput: str = self.execFunction(fnCallId, functionName, fnCallArgs, content)
-        
+            self.functionChatOutput, reponseMsgIndex = self.execFunction(fnCallId, functionName, fnCallArgs, content)
+            responseMsgIdxList.append(reponseMsgIndex)
+
+        # Check that all tool calls have responses
+        for fnCallId, responseMsgIdx in zip(self.partial_response_function_calls_id, responseMsgIdxList):
+            msg: Dict = self.cur_messages[responseMsgIdx]
+            assert("tool" == msg.get("role"))
+            assert(fnCallId == msg.get("tool_call_id"))
 
         list(self.sendToolMessages()) # We need to wrap in list() so items in the returned generator are actually called
 
@@ -153,7 +163,7 @@ class ManagerCoder(AskCoder):
         super().show_send_output(completion)
 
 
-    def execFunction(self, fnCallId: str, functionName: str, args: Dict, content: str) ->  None:
+    def execFunction(self, fnCallId: str, functionName: str, args: Dict, content: str) ->  Tuple[str, int]:
         
         result: str
 
@@ -162,7 +172,7 @@ class ManagerCoder(AskCoder):
 
         elif functionName == "stop_edits":
             result, output = "I have declared the end of the editing process.", None
-            raise 
+            raise TaskEndedExeption()
         
         elif functionName == "add_file":
             result, output = self._add_file(args)
@@ -176,14 +186,14 @@ class ManagerCoder(AskCoder):
         else:
             raise ValueError(f"Unknown function name: {function}")
         
-        self.queueToolResult(fnCallId, result, output)
+        responseMsgIndex: int = self.queueToolResult(fnCallId, result, output)
         
         # TODO: do we need this?
         # self.reply_completed()
-        return result
+        return result, responseMsgIndex
     
 
-    def queueToolResult(self, fnCallId: str, result: str, output:Any) -> None:
+    def queueToolResult(self, fnCallId: str, result: str|Dict, output:Any) -> None:
         content: str|None = json.dumps(result) if isinstance(result, dict) else result
 
         newMsg: Dict[str, str] = dict(
@@ -193,63 +203,91 @@ class ManagerCoder(AskCoder):
         )
         self.cur_messages += [ newMsg ]
 
+        logger.debug(f"Added tool response to messages for tool_call_id={fnCallId}")
+
+        return len(self.cur_messages)-1 # Return the index of the new message
+
 
     def sendToolMessages(self):
             
         chunks = self.format_messages()
         messages = chunks.all_messages()
 
-        while True:
-            try:
-                yield from self.send(messages, functions=self.functions)
-                break
-            except retry_exceptions() as err:
-                # Print the error and its base classes
-                # for cls in err.__class__.__mro__: dump(cls.__name__)
+        try:
+            while True:
+                try:
+                    yield from self.send(messages, functions=self.functions)
+                    break
+                except retry_exceptions() as err:
+                    # Print the error and its base classes
+                    # for cls in err.__class__.__mro__: dump(cls.__name__)
 
-                retry_delay *= 2
-                if retry_delay > RETRY_TIMEOUT:
+                    retry_delay *= 2
+                    if retry_delay > RETRY_TIMEOUT:
+                        self.mdstream = None
+                        self.check_and_open_urls(err)
+                        break
+                    err_msg = str(err)
+                    self.io.tool_error(err_msg)
+                    self.io.tool_output(f"Retrying in {retry_delay:.1f} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                except KeyboardInterrupt:
+                    interrupted = True
+                    break
+                except litellm.ContextWindowExceededError:
+                    # The input is overflowing the context window!
+                    exhausted = True
+                    break
+                except litellm.exceptions.BadRequestError as br_err:
+                    self.io.tool_error(f"BadRequestError: {br_err}")
+                    return
+                except FinishReasonLength:
+                    # We hit the output limit!
+                    if not self.main_model.info.get("supports_assistant_prefill"):
+                        exhausted = True
+                        break
+
+                    self.multi_response_content = self.get_multi_response_content()
+
+                    if messages[-1]["role"] == "assistant": # TODO: Is this where the extra assistant message gets added?
+                        messages[-1]["content"] = self.multi_response_content
+                    else:
+                        messages.append(
+                            dict(role="assistant", content=self.multi_response_content, prefix=True)
+                        )
+                except (openai.APIError, openai.APIStatusError) as err:
                     self.mdstream = None
                     self.check_and_open_urls(err)
                     break
-                err_msg = str(err)
-                self.io.tool_error(err_msg)
-                self.io.tool_output(f"Retrying in {retry_delay:.1f} seconds...")
-                time.sleep(retry_delay)
-                continue
-            except KeyboardInterrupt:
-                interrupted = True
-                break
-            except litellm.ContextWindowExceededError:
-                # The input is overflowing the context window!
-                exhausted = True
-                break
-            except litellm.exceptions.BadRequestError as br_err:
-                self.io.tool_error(f"BadRequestError: {br_err}")
-                return
-            except FinishReasonLength:
-                # We hit the output limit!
-                if not self.main_model.info.get("supports_assistant_prefill"):
-                    exhausted = True
-                    break
-
-                self.multi_response_content = self.get_multi_response_content()
-
-                if messages[-1]["role"] == "assistant":
-                    messages[-1]["content"] = self.multi_response_content
+                except Exception as err:
+                    lines = traceback.format_exception(type(err), err, err.__traceback__)
+                    self.io.tool_warning("".join(lines))
+                    self.io.tool_error(str(err))
+                    return
+                
+                if self.partial_response_function_calls:
+                    args = self.parse_partial_args()
+                    if args:
+                        content = "\n".join([arg.get("explanation", "") for arg in args])
+                    else:
+                        content = ""
+                elif self.partial_response_content:
+                    content = self.partial_response_content
                 else:
-                    messages.append(
-                        dict(role="assistant", content=self.multi_response_content, prefix=True)
-                    )
-            except (openai.APIError, openai.APIStatusError) as err:
+                    content = ""
+
+                try:
+                    self.reply_completed()
+                except KeyboardInterrupt:
+                    interrupted = True
+        finally:
+            if self.mdstream:
+                self.live_incremental_response(True)
                 self.mdstream = None
-                self.check_and_open_urls(err)
-                break
-            except Exception as err:
-                lines = traceback.format_exception(type(err), err, err.__traceback__)
-                self.io.tool_warning("".join(lines))
-                self.io.tool_error(str(err))
-                return
+
+            self.partial_response_content = self.get_multi_response_content(True)
+            self.multi_response_content = ""
 
 
     def _add_file(self, args: Dict) -> Tuple[str, None]:
@@ -264,7 +302,6 @@ class ManagerCoder(AskCoder):
         return f"I have removed the file {args["filepath"]} from the chat.", None
 
 
-    # Actually not sure if this tool is needed, since the files are already injected into LLM API calls via the repo map
     def _check_files(self, args: Dict) -> Tuple[str, List[str]]:
         self.run("/ls")
 
@@ -298,7 +335,6 @@ class ManagerCoder(AskCoder):
 
         arch_coder.run(with_message=editorContent, preproc=False)
 
-        # Need to leave this out compared to ArchitectCoder to avoid "summarizing away" the tool messages
         # self.move_back_cur_messages("I made those changes to the files.")
         self.total_cost = arch_coder.total_cost
         self.aider_commit_hashes = arch_coder.aider_commit_hashes

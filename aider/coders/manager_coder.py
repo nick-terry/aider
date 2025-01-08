@@ -294,19 +294,19 @@ class ManagerCoder(AskCoder):
 
 
     def _add_file(self, args: Dict) -> Tuple[str, None]:
-        self.run(f"/add {args['filepath']}", isToolCall=True)
+        self.run(f"/add {args['filepath']}")
         
         return f"I have added the file {args["filepath"]} to the chat.", None
 
 
     def _remove_file(self, args: Dict) -> Tuple[str, None]:
-        self.run(f"/drop {args['filepath']}", isToolCall=True)
+        self.run(f"/drop {args['filepath']}")
 
         return f"I have removed the file {args["filepath"]} from the chat.", None
 
 
     def _check_files(self, args: Dict) -> Tuple[str, List[str]]:
-        self.run("/ls", isToolCall=True)
+        self.run("/ls")
 
         return "I am checking the files already in the chat.", [] # TODO: return the list of files in the chat
 

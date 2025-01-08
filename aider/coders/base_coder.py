@@ -1536,6 +1536,7 @@ class Coder:
                 #     completion.choices[0].message.tool_calls[0].function
                 # )
                 self.partial_response_function_calls = [ tool_call.function for tool_call in completion.choices[0].message.tool_calls ]
+                self.partial_response_function_calls_id = [ tool_call.id for tool_call in completion.choices[0].message.tool_calls ]
         except AttributeError as func_err:
             show_func_err = func_err
 
@@ -1564,6 +1565,12 @@ class Coder:
             and completion.choices[0].finish_reason == "length"
         ):
             raise FinishReasonLength()
+        
+        msgDict = completion.choices[0].message.to_dict()
+        toolCalls = msgDict.get("tool_calls", [])
+        if toolCalls is not None and len(toolCalls) > 0:
+            self.cur_messages += [ msgDict ]
+
 
     def show_send_output_stream(self, completion):
         for chunk in completion:

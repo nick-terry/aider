@@ -21,6 +21,7 @@ The following actions are available:
     - Plan a change using the `make_edits` function
     - Finish the cleanup process using, making no further changes using the `stop_edits` function
 
+After taking an action, stop to verify that the outcome of the action is as expected. DO NOT take any further action until prompted to do so.
 DO NOT try to add files to the chat if they have already been added.
 Try to keep as few files in the chat as possible.
 DO NOT ask for permission to make changes or take action. Assume that you have the authority to take any action necesary to complete the task.

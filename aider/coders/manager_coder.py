@@ -19,6 +19,7 @@ logger = logging.getLogger("proctor.cleanup.agent")
 class TaskEndedExeption(Exception):
     pass
 
+
 class ManagerCoder(AskCoder):
 
     edit_format = "manager"
@@ -100,20 +101,22 @@ class ManagerCoder(AskCoder):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.temperature = 1
+        self.tool_call_responses: Dict[str, Dict] = dict() # Use this to store the responses to tool calls. The key is the tool_call_id
+        self.stream = False
 
 
     def create(*args, **kwargs):
         return ManagerCoder(*args, **kwargs)
 
 
-    # TODO: might need to update this to handle multiple tool calls
-    def update_cur_messages(self):
+    # # TODO: might need to update this to handle multiple tool calls
+    # def update_cur_messages(self):
 
-        functionName: str = self.partial_response_function_calls[0].get("name") if len(self.partial_response_function_calls) > 0 else ""
-        args: Dict = self.parse_partial_args() if len(self.partial_response_function_calls) > 0 else {}
+    #     functionName: str = self.partial_response_function_calls[0].get("name") if len(self.partial_response_function_calls) > 0 else ""
+    #     args: Dict = self.parse_partial_args() if len(self.partial_response_function_calls) > 0 else {}
         
-        self.partial_response_content = self.partial_response_content or self.functionChatOutput or f"I am going to use the `{functionName}` function with arguments: {args}\n. This is the best next step because {args.get("explanation")}\n"
-        super().update_cur_messages()
+    #     self.partial_response_content = self.partial_response_content or self.functionChatOutput or f"I am going to use the `{functionName}` function with arguments: {args}\n. This is the best next step because {args.get("explanation")}\n"
+    #     # super().update_cur_messages()
 
 
     def reply_completed(self):
@@ -141,25 +144,23 @@ class ManagerCoder(AskCoder):
             assert("tool" == msg.get("role"))
             assert(fnCallId == msg.get("tool_call_id"))
 
+            self.tool_call_responses[fnCallId] = msg
+
         list(self.sendToolMessages()) # We need to wrap in list() so items in the returned generator are actually called
 
 
     def show_send_output(self, completion):
 
-        try:
-            if completion.choices[0].message.tool_calls:
-                self.partial_response_function_calls = [ tool_call.function for tool_call in completion.choices[0].message.tool_calls ]
-                self.partial_response_function_calls_id = [ tool_call.id for tool_call in completion.choices[0].message.tool_calls ]
+        # try:
+        #     if completion.choices[0].message.tool_calls:
+        #         self.partial_response_function_calls = [ tool_call.function for tool_call in completion.choices[0].message.tool_calls ]
+        #         self.partial_response_function_calls_id = [ tool_call.id for tool_call in completion.choices[0].message.tool_calls ]
 
-        except AttributeError as func_err:
-            show_func_err = func_err
+        # except AttributeError as func_err:
+        #     show_func_err = func_err
 
-        # functionName: str = self.partial_response_function_call.get("name")
-        # args: Dict = self.parse_partial_args()
+        # self.cur_messages += [ completion.choices[0].message.to_dict() ]
 
-        self.cur_messages += [ completion.choices[0].message.to_dict() ]
-
-        # completion.choices[0].message.content = f"I am going to use the `{functionName}` function with arguments: {args}\n. This is the best next step because {args.get("explanation")}\n"
         super().show_send_output(completion)
 
 
@@ -186,10 +187,10 @@ class ManagerCoder(AskCoder):
         else:
             raise ValueError(f"Unknown function name: {function}")
         
+        result += " Verify that this is the tool output you expected. DO NOT make another tool call until you are prompted to do so."
+
         responseMsgIndex: int = self.queueToolResult(fnCallId, result, output)
         
-        # TODO: do we need this?
-        # self.reply_completed()
         return result, responseMsgIndex
     
 
@@ -288,22 +289,24 @@ class ManagerCoder(AskCoder):
 
             self.partial_response_content = self.get_multi_response_content(True)
             self.multi_response_content = ""
+            
+        self.handlePossibleToolCalls()
 
 
     def _add_file(self, args: Dict) -> Tuple[str, None]:
-        self.run(f"/add {args['filepath']}")
+        self.run(f"/add {args['filepath']}", isToolCall=True)
         
         return f"I have added the file {args["filepath"]} to the chat.", None
 
 
     def _remove_file(self, args: Dict) -> Tuple[str, None]:
-        self.run(f"/drop {args['filepath']}")
+        self.run(f"/drop {args['filepath']}", isToolCall=True)
 
         return f"I have removed the file {args["filepath"]} from the chat.", None
 
 
     def _check_files(self, args: Dict) -> Tuple[str, List[str]]:
-        self.run("/ls")
+        self.run("/ls", isToolCall=True)
 
         return "I am checking the files already in the chat.", [] # TODO: return the list of files in the chat
 
@@ -340,3 +343,4 @@ class ManagerCoder(AskCoder):
         self.aider_commit_hashes = arch_coder.aider_commit_hashes
 
         return "I have asked the editor engineer to make changes to the code.", None
+    

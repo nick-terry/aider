@@ -11,7 +11,7 @@ from aider.utils import is_image_file
 from prompt_toolkit.output import create_output
 from prompt_toolkit.input.base import PipeInput
 
-from aider.coders.manager_coder import ManagerCoder, TaskEndedExeption
+from aider.coders.manager_coder import ManagerCoder, TaskEndedException
 
 fence = "`" * 3
 

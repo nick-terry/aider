@@ -16,7 +16,7 @@ from typing import Dict, Tuple, List, Any
 
 logger = logging.getLogger("proctor.cleanup.agent")
 
-class TaskEndedExeption(Exception):
+class TaskEndedException(Exception):
     pass
 
 

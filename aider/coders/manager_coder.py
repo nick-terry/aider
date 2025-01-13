@@ -173,7 +173,7 @@ class ManagerCoder(AskCoder):
 
         elif functionName == "stop_edits":
             result, output = "I have declared the end of the editing process.", None
-            raise TaskEndedExeption()
+            raise TaskEndedException()
         
         elif functionName == "add_file":
             result, output = self._add_file(args)

@@ -267,6 +267,7 @@ class Coder:
         num_cache_warming_pings=0,
         suggest_shell_commands=True,
         chat_language=None,
+        for_api_usage=False,
     ):
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
@@ -278,6 +279,7 @@ class Coder:
         self.rejected_urls = set()
         self.abs_root_path_cache = {}
         self.ignore_mentions = set()
+        self.for_api_usage = for_api_usage
 
         self.suggest_shell_commands = suggest_shell_commands
 
@@ -442,6 +444,17 @@ class Coder:
             if self.verbose:
                 self.io.tool_output("JSON Schema:")
                 self.io.tool_output(json.dumps(self.functions, indent=4))
+
+
+        # Apply patch for API usage
+        if self.for_api_usage:
+            self.max_reflections = 100
+            self.show_usage_report = lambda self: None
+
+    def toApiMode(self):
+        self.for_api_usage = True
+        self.max_reflections = 100
+        self.show_usage_report = lambda self: None
 
     def setup_lint_cmds(self, lint_cmds):
         if not lint_cmds:

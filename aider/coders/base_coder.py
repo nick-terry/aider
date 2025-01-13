@@ -449,12 +449,14 @@ class Coder:
         # Apply patch for API usage
         if self.for_api_usage:
             self.max_reflections = 100
-            self.show_usage_report = lambda self: None
+            # self.show_usage_report = lambda self: None
+            self.usage_report = False
 
     def toApiMode(self):
         self.for_api_usage = True
         self.max_reflections = 100
-        self.show_usage_report = lambda self: None
+        # self.show_usage_report = lambda self: None
+        self.usage_report = False
 
     def setup_lint_cmds(self, lint_cmds):
         if not lint_cmds:

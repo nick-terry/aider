@@ -12,3 +12,5 @@ _site
 .jekyll-metadata
 aider/__version__.py
 .venv/
+.env
+venv

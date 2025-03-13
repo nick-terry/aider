@@ -20,6 +20,7 @@ DEFAULT_MODEL_NAME = "gpt-4o"
 ANTHROPIC_BETA_HEADER = "prompt-caching-2024-07-31"
 
 OPENAI_MODELS = """
+o3-mini
 gpt-4
 gpt-4o
 gpt-4o-2024-05-13
@@ -674,6 +675,42 @@ MODEL_SETTINGS = [
         "diff",
         weak_model_name="openrouter/openai/gpt-4o-mini",
         editor_model_name="openrouter/openai/gpt-4o",
+        editor_edit_format="editor-diff",
+        use_repo_map=True,
+        reminder="user",
+        use_system_prompt=False,
+        use_temperature=False,
+        streaming=False,
+    ),
+    ModelSettings(
+        "o3-mini",
+        "whole",
+        weak_model_name="o3-mini",
+        editor_model_name="o3-mini",
+        editor_edit_format="editor-diff",
+        use_repo_map=True,
+        reminder="user",
+        use_system_prompt=False,
+        use_temperature=False,
+        streaming=False,
+    ),
+    ModelSettings(
+        "o3-mini",
+        "architect",
+        weak_model_name="o3-mini",
+        editor_model_name="o3-mini",
+        editor_edit_format="editor-diff",
+        use_repo_map=True,
+        reminder="user",
+        use_system_prompt=False,
+        use_temperature=False,
+        streaming=False,
+    ),
+    ModelSettings(
+        "o3-mini",
+        "diff",
+        weak_model_name="o3-mini",
+        editor_model_name="o3-mini",
         editor_edit_format="editor-diff",
         use_repo_map=True,
         reminder="user",

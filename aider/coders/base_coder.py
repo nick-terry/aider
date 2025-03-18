@@ -268,6 +268,7 @@ class Coder:
         suggest_shell_commands=True,
         chat_language=None,
         for_api_usage=False,
+        detect_urls=True,
     ):
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
@@ -280,6 +281,7 @@ class Coder:
         self.abs_root_path_cache = {}
         self.ignore_mentions = set()
         self.for_api_usage = for_api_usage
+        self.detect_urls = detect_urls
 
         self.suggest_shell_commands = suggest_shell_commands
 
@@ -852,6 +854,10 @@ class Coder:
         return urls
 
     def check_for_urls(self, inp: str) -> List[str]:
+
+        if not self.detect_urls:
+            return []
+
         """Check input for URLs and offer to add them to the chat."""
         url_pattern = re.compile(r"(https?://[^\s/$.?#].[^\s]*[^\s,.])")
         urls = list(set(url_pattern.findall(inp)))  # Use set to remove duplicates

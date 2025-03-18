@@ -735,7 +735,7 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--detect-urls",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Enable/disable detection and offering to add URLs to chat (default: True)",
     )
 
